@@ -119,7 +119,6 @@ class MQTT_Handler(Thread):
                 self.logger.error("Connexion error - Autre erreur")
                 self.logger.error(client, userdata, flags, rc)
                 self.changeStatus("bad_connected")
-        self.mainClass.event_refresh.set()
 
     def on_message(self, client, obj, msg):
         topic = str(msg.topic)
@@ -141,10 +140,9 @@ class MQTT_Handler(Thread):
                     case _:
                         self.actualScript = payload
                 self.mainUI.changeActualScript(self.actualScript)
-        self.mainClass.event_refresh.set()
 
     def on_publish(self, userdata, mid, qos):
-        self.mainClass.event_refresh.set()
+        pass
 
     def on_disconnect(self, client, userdata, rc):
         self.changeStatus("no_connection")
@@ -153,7 +151,6 @@ class MQTT_Handler(Thread):
                 self.logger.warning("Disconnected from MQTT Broker properly")
             case _:
                 self.logger.warning("Disconnected from MQTT Broker inproperly")
-        self.mainClass.event_refresh.set()
 
     def connect_mqtt(self):
         self.logger.info("Connexion au MQTT Broker en cours")
@@ -178,7 +175,7 @@ class MQTT_Handler(Thread):
                 status_formatted = self.mainUI.status_translation[self.status]
             except KeyError:
                 status_formatted = self.status
-            self.mainClass.event_refresh.set()
+            
             self.logger.error(f"Connexion impossible au broker à l'adresse {self.host} "
                               f"pour la raison : {status_formatted}")
             messagebox.showerror("Connexion impossible",
