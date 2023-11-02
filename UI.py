@@ -4,7 +4,7 @@ from logger import CustomLogger
 from main import App
 import configparser
 import webbrowser
-import threading
+from threading import Event
 import sys
 import os
 
@@ -13,6 +13,7 @@ STATUS_SECTION = "Status"
 
 
 class MainUI(Tk):
+    UI_started: Event
     mqtt: None
     multicast: None
     configuration: configparser.ConfigParser
@@ -23,7 +24,6 @@ class MainUI(Tk):
     style: Style
     menubar: Menu
     actualiseMenuOption: Menu
-    actualiseRunningMenuOption: Menu
     headerFrame: Frame
     choixTestLabelFrame: LabelFrame
     choixTestTreeView: Treeview
@@ -47,6 +47,10 @@ class MainUI(Tk):
         # Configure the logging
         self.logClass = CustomLogger(name=__name__)
         self.logger = self.logClass.logger
+
+        # Create event for check if class has started
+        self.UI_started = Event()
+        self.UI_started.clear()
 
         # Init the Tk class
         self.logger.debug("Init de la class UI")
@@ -75,6 +79,9 @@ class MainUI(Tk):
         # Finish the UI (populating big elements)
         self.addDataTreeViewChoix()
         self.addFieldsMenuBar()
+
+        # Check the UI started event
+        self.UI_started.set()
 
         # Run the app
         self.mainloop()
@@ -220,26 +227,18 @@ class MainUI(Tk):
         self.actualiseMenuOption.add_command(label="Intialiser les relais MESD", command=lambda: self.mqtt.initMQTT())
         self.actualiseMenuOption.add_separator()
         self.actualiseMenuOption.add_command(label="Recharger la configuration", command=lambda: self.reloadApp())
-        self.actualiseMenuOption.add_separator()
-        self.actualiseRunningMenuOption = Menu(self.menubar, tearoff=0)
-        self.actualiseMenuOption.add_cascade(label="Commutation de l'état d'éxectution",
-                                             menu=self.actualiseRunningMenuOption)
-        self.actualiseRunningMenuOption.add_command(label="Lancer le rafraîchissement",
-                                                    command=lambda: self.startRefreshApp())
-        self.actualiseRunningMenuOption.add_command(label="Stopper le rafraîchissement",
-                                                    command=lambda: self.stopRefreshApp())
 
         # Menu - Forçages
         self.forceMenuCascade = Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Forçages", menu=self.forceMenuCascade)
         self.forceMenuCascade.add_command(label="Forcer 'no_connection'",
-                                          command=lambda: self.forceChangeStatus("no_connection"))
+                                          command=lambda: self.changeStatus("no_connection"))
         self.forceMenuCascade.add_command(label="Forcer 'connected'",
-                                          command=lambda: self.forceChangeStatus("connected"))
+                                          command=lambda: self.changeStatus("connected"))
         self.forceMenuCascade.add_command(label="Forcer 'bad_connected'",
-                                          command=lambda: self.forceChangeStatus("bad_connected"))
+                                          command=lambda: self.changeStatus("bad_connected"))
         self.forceMenuCascade.add_command(label="Forcer 'a'",
-                                          command=lambda: self.forceChangeStatus("a"))
+                                          command=lambda: self.changeStatus("a"))
         self.forceMenuCascade.add_separator()
         self.forceMenuCascade.add_command(label="Simuler une carte", command=lambda: self.simulateCard())
 
@@ -288,57 +287,40 @@ class MainUI(Tk):
 
     def changeStatus(self, status):
         # Update the current status state
+        self.UI_started.wait()
         try:
             formatted_status = self.status_translation[status]
         except KeyError:
             formatted_status = status
-        try:
-            match status:
-                case "connected":
-                    self.etatTestVarLabel.configure(foreground="green")
-                case "no_connection":
-                    self.etatTestVarLabel.configure(foreground="red")
-                case s if s.startswith("bad_"):
-                    self.etatTestVarLabel.configure(foreground="orange")
-                case _:
-                    self.etatTestVarLabel.configure(foreground="black")
+        match status:
+            case "connected":
+                self.etatTestVarLabel.configure(foreground="green")
+            case "no_connection":
+                self.etatTestVarLabel.configure(foreground="red")
+            case s if s.startswith("bad_"):
+                self.etatTestVarLabel.configure(foreground="orange")
+            case _:
+                self.etatTestVarLabel.configure(foreground="black")
 
-            # Actualisation du Label de l'état de la connexion et des tests
-            self.etatTestStringVar.set(formatted_status)
-        except AttributeError:
-            pass  # Mouais...
+        # Actualisation du Label de l'état de la connexion et des tests
+        self.etatTestStringVar.set(formatted_status)
 
     def changeActualScript(self, actualScript):
         # Update the actual script state
-        try:
-            self.testCoursStringVar.set(actualScript)
-        except AttributeError:
-            pass  # Mouais...
+        self.UI_started.wait()
+        self.testCoursStringVar.set(actualScript)
 
     def changeDataMESD(self, data=None):
-        # Update the table
-        try:
-            for row in self.dataMESDTreeView.get_children():
-                self.dataMESDTreeView.delete(row)
-            inputs = self.mqtt.input_buffer_dict  # Pour l'instant car pas encore multicast d'implémenté
-            for card in inputs:
-                inputs_card = tuple(inputs[card].values())
-                self.dataMESDTreeView.insert("", "end", card, text=card, values=inputs_card, tags=('GPIO',))
-        except AttributeError:
-            pass  # Mouais...
+        self.UI_started.wait()
+        for row in self.dataMESDTreeView.get_children():
+            self.dataMESDTreeView.delete(row)
+        inputs = self.mqtt.input_buffer_dict  # Pour l'instant car pas encore multicast d'implémenté
+        for card in inputs:
+            inputs_card = tuple(inputs[card].values())
+            self.dataMESDTreeView.insert("", "end", card, text=card, values=inputs_card, tags=('GPIO',))
 
-    def stopRefreshApp(self):
-        self.threadRun = False
-
-    def startRefreshApp(self):
-        self.threadRun = True
-        threading.Thread(target=self.updateData, daemon=True).start()
-
-    def forceChangeStatus(self, status):
-        self.mqtt.status = status
-        self.mainClass.event_refresh.set()
 
     def simulateCard(self):
         self.mqtt.input_buffer_dict["Test BRIO"] = {"I1": 1, "I2": 1, "I3": 1, "I4": 1, "I5": 1, "I6": 1, "I7": 1,
                                                     "I8": 1, "I9": 1, "I10": 1, "I11": 1}
-        self.mainClass.event_refresh.set()
+        self.changeDataMESD()
