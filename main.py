@@ -10,9 +10,6 @@ class App():
         self.logClass = CustomLogger(name=__name__)
         self.logger = self.logClass.logger
 
-        # Refresh event
-        self.event_refresh = Event() # Will be deprecated with the new methods to update content
-
         # Create the classes
         self.mqtt = MQTT.MQTT_Handler(self)
         self.multicast = MULTICAST.Multicast_Handler(self)
